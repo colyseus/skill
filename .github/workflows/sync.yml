@@ -1,0 +1,46 @@
+name: sync
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, to catch documentation that moved during the week
+  workflow_dispatch:
+
+jobs:
+  # References are generated from the published docs, so a PR that hand-edits
+  # them, or a docs page that was renamed, has to fail here.
+  check:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm run check
+
+  resync:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm run sync
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: sync/docs
+          title: "Sync references with the published docs"
+          commit-message: "Sync references with the published docs"
+          body: |
+            Regenerated `references/` from docs.colyseus.io.
+
+            Review the diff for API changes worth reflecting in `SKILL.md`:
+            the anti-pattern table and the canonical shapes are hand-written and
+            do not update themselves.

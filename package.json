@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "@colyseus/skill",
+  "version": "0.18.0",
+  "description": "Agent skill for building multiplayer game servers with Colyseus",
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync.mjs",
+    "check": "node scripts/sync.mjs --check"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/colyseus/skill.git"
+  },
+  "license": "MIT"
+}
