@@ -5,8 +5,8 @@
   "description": "Agent skill for building multiplayer game servers with Colyseus",
   "type": "module",
   "scripts": {
-    "sync": "node scripts/sync.mjs",
-    "check": "node scripts/sync.mjs --check"
+    "sync": "node tools/sync.mjs",
+    "check": "node tools/sync.mjs --check"
   },
   "repository": {
     "type": "git",

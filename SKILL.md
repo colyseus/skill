@@ -1,6 +1,6 @@
 ---
 name: colyseus
-description: Build or review multiplayer game servers and clients with Colyseus (Node.js): rooms, Schema state synchronization, matchmaking, client SDKs, client-side prediction and lag compensation. Use whenever Colyseus, @colyseus/schema, @colyseus/sdk or a colyseus.js client appears in the task or the project's dependencies, and before writing any Room, Schema or state-sync code.
+description: Colyseus multiplayer game servers and clients: rooms, Schema state synchronization, matchmaking, client SDKs, client-side prediction. Use when colyseus, @colyseus/schema, @colyseus/sdk or colyseus.js appears in the task or the project's dependencies, and before writing any Room or Schema code.
 ---
 
 # Colyseus

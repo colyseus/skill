@@ -10,20 +10,23 @@ importantly, makes them check the installed version before writing anything.
 
 ## Install
 
-**Claude Code**, for one project:
+This is a plain [Agent Skill](https://agentskills.io), so it works in any tool
+that implements the standard. Only the directory each tool scans differs.
 
-```sh
-git clone https://github.com/colyseus/skill .claude/skills/colyseus
-```
-
-Or for every project on the machine:
+| Tool | Every project | One project |
+| --- | --- | --- |
+| Claude Code | `~/.claude/skills/colyseus` | `.claude/skills/colyseus` |
+| Codex | `~/.agents/skills/colyseus` | `.agents/skills/colyseus` |
 
 ```sh
 git clone https://github.com/colyseus/skill ~/.claude/skills/colyseus
+git clone https://github.com/colyseus/skill ~/.agents/skills/colyseus
 ```
 
-The skill activates on its own when a task involves Colyseus. Other agents that
-read `SKILL.md` conventions can use the same checkout.
+The skill activates on its own when a task involves Colyseus, matched from the
+`description` in `SKILL.md`. Nothing in it is tool-specific: the frontmatter
+uses only `name` and `description`, and `references/` is the standard bundled
+documentation slot.
 
 ## What is in it
 
