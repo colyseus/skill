@@ -1,6 +1,10 @@
 ---
 name: colyseus
 description: Colyseus multiplayer game servers and clients: rooms, Schema state synchronization, matchmaking, client SDKs, client-side prediction. Use when colyseus, @colyseus/schema, @colyseus/sdk or colyseus.js appears in the task or the project's dependencies, and before writing any Room or Schema code.
+license: MIT
+metadata:
+  version: 0.18.0
+  documentation: https://docs.colyseus.io
 ---
 
 # Colyseus

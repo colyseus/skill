@@ -11,7 +11,15 @@ importantly, makes them check the installed version before writing anything.
 ## Install
 
 This is a plain [Agent Skill](https://agentskills.io), so it works in any tool
-that implements the standard. Only the directory each tool scans differs.
+that implements the standard.
+
+```sh
+npx skills add colyseus/skill            # this project
+npx skills add colyseus/skill --global   # every project
+```
+
+Or clone it into the directory your tool scans. The target directory **must**
+be named `colyseus`, to match the `name` in `SKILL.md`:
 
 | Tool | Every project | One project |
 | --- | --- | --- |
@@ -20,13 +28,17 @@ that implements the standard. Only the directory each tool scans differs.
 
 ```sh
 git clone https://github.com/colyseus/skill ~/.claude/skills/colyseus
-git clone https://github.com/colyseus/skill ~/.agents/skills/colyseus
 ```
 
 The skill activates on its own when a task involves Colyseus, matched from the
 `description` in `SKILL.md`. Nothing in it is tool-specific: the frontmatter
-uses only `name` and `description`, and `references/` is the standard bundled
+uses only portable fields, and `references/` is the standard bundled
 documentation slot.
+
+Skills are instructions an agent will act on, so read one before installing it.
+This one ships no `scripts/`: it asks the agent to read documentation and check
+your installed version, and it never asks it to run anything. The sync tooling
+in `tools/` is for maintaining this repository and is not part of the skill.
 
 ## What is in it
 
