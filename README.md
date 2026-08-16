@@ -1,7 +1,7 @@
 # Colyseus agent skill
 
-An [Agent Skill](https://docs.claude.com/en/docs/agents-and-tools/agent-skills)
-that teaches coding agents the current Colyseus APIs.
+An [Agent Skill](https://agentskills.io) that teaches coding agents the current
+Colyseus APIs.
 
 Most models learned Colyseus from pre-0.18 material, so left to memory they
 write `colyseus.js` imports, `Room<MyState>` generics, `client.id`, and
@@ -10,30 +10,33 @@ importantly, makes them check the installed version before writing anything.
 
 ## Install
 
-This is a plain [Agent Skill](https://agentskills.io), so it works in any tool
-that implements the standard.
+Agent Skills are an [open standard](https://agentskills.io/specification), so
+this works in Claude Code, Codex, Cursor, Gemini CLI, Copilot, opencode, and
+[every other client that implements it](https://agentskills.io/clients).
 
 ```sh
 npx skills add colyseus/skill            # this project
 npx skills add colyseus/skill --global   # every project
 ```
 
-Or clone it into the directory your tool scans. The target directory **must**
-be named `colyseus`, to match the `name` in `SKILL.md`:
+That asks which of your installed agents to set up, and writes to each one's
+own directory. To do it by hand, clone into the directory your tool scans. The
+target directory **must** be named `colyseus`, to match the `name` in
+`SKILL.md`:
 
 | Tool | Every project | One project |
 | --- | --- | --- |
+| Codex, Cursor, Gemini CLI, Copilot, opencode | `~/.agents/skills/colyseus` | `.agents/skills/colyseus` |
 | Claude Code | `~/.claude/skills/colyseus` | `.claude/skills/colyseus` |
-| Codex | `~/.agents/skills/colyseus` | `.agents/skills/colyseus` |
 
 ```sh
-git clone https://github.com/colyseus/skill ~/.claude/skills/colyseus
+git clone https://github.com/colyseus/skill ~/.agents/skills/colyseus
 ```
 
 The skill activates on its own when a task involves Colyseus, matched from the
 `description` in `SKILL.md`. Nothing in it is tool-specific: the frontmatter
-uses only portable fields, and `references/` is the standard bundled
-documentation slot.
+uses only fields the specification defines, it declares no `compatibility`
+requirement, and `references/` is the standard bundled documentation slot.
 
 Skills are instructions an agent will act on, so read one before installing it.
 This one ships no `scripts/`: it asks the agent to read documentation and check
