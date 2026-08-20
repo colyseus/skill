@@ -328,7 +328,7 @@ const input = room.input({ type: MoveInput });
 const me = predict.reconciler(self, {
   input,                                     // every scalar field of `self` mirrors by default
   step: (ctx, s, cmd) => applyInput(s, cmd, LEVEL, ctx.dt),
-  smoothing: 15,
+  smoothMs: 65,
 });
 
 function frame(now) {                      // pass the rAF timestamp through
@@ -363,7 +363,7 @@ var input = room.Input(cmd);
 var me = predict.Reconciler(self, new ReconcilerOptions<Player, MoveInput> {
     Input = input,
     Fields = new[] { "x", "y", "vx", "vy" },       // the fields the step touches
-    Smoothing = 15,
+    SmoothMs = 65,
     Step = (ctx, s, c) => ApplyInput(s, c, LEVEL, ctx.Dt),  // SAME function the server runs
 });
 
@@ -394,7 +394,7 @@ local input = room:input()
 local me = predict:reconciler(self_player, {
   input = input,
   fields = { "x", "y", "vx", "vy" },        -- the fields the step touches
-  smoothing = 15,
+  smooth_ms = 65,
   -- the SAME function the server runs
   step = function(ctx, s, cmd) apply_input(s, cmd, LEVEL, ctx.dt) end,
 })
@@ -427,7 +427,7 @@ var cmd = input.data;
 var me = predict.reconciler(self, {
     input: input,
     fields: ["x", "y", "vx", "vy"],         // the fields the step touches
-    smoothing: 15,
+    smoothMs: 65,
     // the SAME function the server runs
     step: (ctx, s, inp) -> applyInput(s, inp, LEVEL, ctx.dt),
 });
@@ -460,7 +460,7 @@ var input = room.input()
 var me = predict.reconciler(self_player, {
     "input": input,
     "fields": ["x", "y", "vx", "vy"],   # the fields the step touches
-    "smoothing": 15.0,
+    "smooth_ms": 65.0,
     "step": _apply_input,               # the SAME function the server runs
 })
 
@@ -489,7 +489,7 @@ final input = room.input()!;
 final me = predict.reconciler(self,
   input: input,
   fields: const ['x', 'y', 'vx', 'vy'],   // the fields the step touches
-  smoothing: 15,
+  smoothMs: 65,
   step: (ctx, s, cmd) => applyInput(s, cmd, level, ctx.dt), // SAME fn as the server
 );
 
@@ -738,7 +738,7 @@ Active prediction for **one** entity you control, mirrored off the instance's sc
 const me = predict.reconciler(self, {
   input,
   step: (ctx, state, cmd) => applyInput(state, cmd, LEVEL, ctx.dt),
-  smoothing: 15,
+  smoothMs: 65,
 });
 ```
 
@@ -748,7 +748,7 @@ const me = predict.reconciler(self, {
 var me = predict.Reconciler(self, new ReconcilerOptions<Player, MoveInput> {
     Input = input,
     Fields = new[] { "x", "y", "vx", "vy" },
-    Smoothing = 15,
+    SmoothMs = 65,
     Step = (ctx, state, cmd) => ApplyInput(state, cmd, LEVEL, ctx.Dt),
 });
 ```
@@ -759,7 +759,7 @@ var me = predict.Reconciler(self, new ReconcilerOptions<Player, MoveInput> {
 local me = predict:reconciler(self_player, {
   input = input,
   fields = { "x", "y", "vx", "vy" },
-  smoothing = 15,
+  smooth_ms = 65,
   step = function(ctx, state, cmd) apply_input(state, cmd, LEVEL, ctx.dt) end,
 })
 ```
@@ -770,7 +770,7 @@ local me = predict:reconciler(self_player, {
 var me = predict.reconciler(self, {
     input: input,
     fields: ["x", "y", "vx", "vy"],
-    smoothing: 15,
+    smoothMs: 65,
     step: (ctx, state, cmd) -> applyInput(state, cmd, LEVEL, ctx.dt),
 });
 ```
@@ -781,7 +781,7 @@ var me = predict.reconciler(self, {
 var me = predict.reconciler(self_player, {
     "input": input,
     "fields": ["x", "y", "vx", "vy"],
-    "smoothing": 15.0,
+    "smooth_ms": 65.0,
     "step": _apply_input,     # func(ctx, state, cmd)
 })
 ```
@@ -792,13 +792,14 @@ var me = predict.reconciler(self_player, {
 final me = predict.reconciler(self,
   input: input,
   fields: const ['x', 'y', 'vx', 'vy'],
-  smoothing: 15,
+  smoothMs: 65,
   step: (ctx, state, cmd) => applyInput(state, cmd, level, ctx.dt),
 );
 ```
 
 - `step(ctx, state, cmd)`: the deterministic step function, **shared with the server**. `cmd` is the buffered wire input recorded at `send()` (the exact value the server decodes), so lossy wire fields (a quantized angle) reconcile by construction. Keep everything the step reads on the input schema.
 - `fields`: optional, and usually best omitted. Every scalar field of the instance's schema is then mirrored, which is the right default. Pass an explicit subset only to exclude scalars deliberately (with the dev panel active, the SDK warns once if the step touches a field the list excludes). Numeric fields get smooth error correction; non-numeric fields (e.g. `grounded`) are copied verbatim on reconcile.
+- `smoothMs`: how long a reconcile correction takes to fade, as a time constant in milliseconds (a correction fades ~63% per `smoothMs`, ~95% by 3×). Defaults to one server patch interval; `0` applies corrections instantly.
 - `snap`: teleport threshold in world units, the active-controller mirror of the [per-attach `snap`](https://docs.colyseus.io/netcode/recipes.md#teleports--respawns-snap). A reconcile correction past it **pops** to the corrected pose instead of gliding across the map, and doesn't count toward divergence telemetry.
 - `warnOnDivergence`: drift tolerance in world units. The SDK warns in the console when the **persistent** reconcile-correction EMA crosses it: a determinism break, not jitter. The telemetry behind it (`me.drift.ema` / `me.drift.peak`) runs while watched (this option set, or the dev panel active). See [Diagnosing divergence vs jitter](https://docs.colyseus.io/netcode/determinism.md#diagnosing-divergence-vs-jitter). Not exposed in the GDScript and Flutter bindings: read the drift telemetry directly (`me.drift_ema` in GDScript, `me.drift.ema` in Dart).
 
@@ -826,7 +827,7 @@ const me = predict.sim({
     puck:   room.state.puck,    // ⇒ auto-bound (x, y, vx, vy)
   },
   step: (ctx, w, cmd) => stepWorld(w, cmd, ctx.dt),   // the SAME fn the server runs
-  smoothing: 15,
+  smoothMs: 65,
 });
 
 draw(predict.value(player, "x"), predict.value(room.state.puck, "x"));  // one read idiom
@@ -841,7 +842,7 @@ var me = predict.Sim(new SimReconcilerOptions<HockeyWorld, MoveInput> {
     Input = input,
     World = new HockeyWorld { paddle = player, puck = room.State.puck },  // ⇒ auto-bound
     Step = (ctx, w, cmd) => StepWorld(w, cmd, ctx.Dt),   // the SAME fn the server runs
-    Smoothing = 15,
+    SmoothMs = 65,
 });
 
 Draw(predict.Value(player, "x"), predict.Value(room.State.puck, "x"));  // one read idiom
@@ -857,7 +858,7 @@ local me = predict:sim({
     puck   = room.state.puck,   -- ⇒ auto-bound (x, y, vx, vy)
   },
   step = function(ctx, w, cmd) step_world(w, cmd, ctx.dt) end,  -- the SAME fn the server runs
-  smoothing = 15,
+  smooth_ms = 65,
 })
 
 draw(predict:value(player, "x"), predict:value(room.state.puck, "x"))  -- one read idiom
@@ -871,7 +872,7 @@ var me = predict.sim({
     input: input,
     world: new HockeyWorld(player, room.state.puck),  // entries ⇒ auto-bound
     step: (ctx, w, cmd) -> stepWorld(w, cmd, ctx.dt), // the SAME fn the server runs
-    smoothing: 15,
+    smoothMs: 65,
 });
 
 draw(predict.value(player, "x"), predict.value(room.state.puck, "x"));  // one read idiom
@@ -884,7 +885,7 @@ var me = predict.sim({
     "input": input,
     "world": { "paddle": player, "puck": puck },  # decoded instances ⇒ auto-bound
     "step": _step_world,     # the SAME fn the server runs
-    "smoothing": 15.0,
+    "smooth_ms": 65.0,
 })
 
 draw(predict.value(player, "x"), predict.value(puck, "x"))  # one read idiom
@@ -897,7 +898,7 @@ final me = predict.sim(
   input: input,
   options: SimOptions(
     parts: [SimPart('paddle', player), SimPart('puck', puck)],  // ⇒ auto-bound
-    smoothing: 15,
+    smoothMs: 65,
   ),
   step: (ctx, world, cmd) {
     stepWorld(world.part('paddle')!, world.part('puck')!, cmd, ctx.dt);
