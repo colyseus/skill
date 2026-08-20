@@ -844,7 +844,7 @@ room.onMessage('powerup').listen((message) {
 
 > **Note:**
 >
-> **Backend:** To send a message from the server to a client you'll need to use either [client.send()](https://docs.colyseus.io/room.md#send-message) or [room.broadcast()](https://docs.colyseus.io/room.md#broadcast-message)
+> **Backend:** To send a message from the server to a client, use [client.send()](https://docs.colyseus.io/room.md#send-message) or [room.broadcast()](https://docs.colyseus.io/room.md#broadcast-message).
 
 ## Request/Response
 
@@ -870,7 +870,7 @@ room.send("get-profile", { userId: 42 }, (profile, error) => {
 });
 ```
 
-The promise rejects (or the callback receives an `error`) when the handler throws, no handler is registered for that type, the connection closes first, or no reply arrives within the timeout. The default timeout is `Room.defaultRequestTimeout` (10000 ms), overridable per request via the `timeout` option.
+The promise rejects (or the callback receives an `error`) when the handler throws or no handler is registered for that type. Rejection also happens when the connection closes first, or when no reply arrives within the timeout. The default timeout is `Room.defaultRequestTimeout` (10000 ms), overridable per request via the `timeout` option.
 
 The server may also **deliberately reject** a request via [`ctx.reject(reason)`](https://docs.colyseus.io/room.md#responding-to-a-message-requestresponse): a business-logic "no", distinct from an error. The rejection arrives as an `Error` with `name: "rejected"`, and the server's raw `reason` on its `.reason` property:
 
@@ -1023,7 +1023,7 @@ The SDK automatically attempts to reconnect when the connection is unexpectedly 
 
 > **Warning:**
 >
-> Automatic reconnection only triggers if the room has been connected for at least `minUptime` milliseconds. This prevents reconnection loops for rooms that fail immediately after joining.
+> Automatic reconnection only triggers if the room has been connected for at least `minUptime` milliseconds. This threshold prevents reconnection loops for rooms that fail immediately after joining.
 
 ### On Drop Event
 
@@ -1437,7 +1437,7 @@ room.removeAllListeners();
 
 > **Note:**
 >
-> The SDK calls `removeAllListeners()` automatically when the room is left, so you only need it to detach early, e.g. when tearing down a UI screen while staying connected.
+> The SDK calls `removeAllListeners()` automatically when the room is left. You only need it to detach early, e.g. when tearing down a UI screen while staying connected.
 
 ---
 Source: https://docs.colyseus.io/sdk/connection
@@ -1903,7 +1903,7 @@ callbacks.OnAdd(state => state.players, (sessionId, player) => {
 The On Change callback is invoked whenever a direct property of a `Schema` instance is modified.
 
 - **Triggers only for direct property changes:** It does not cascade or propagate changes from nested properties within the Schema.
-- The callback fires after the changes have been applied to the Schema instance. This means you're dealing with the updated instance when the callback executes.
+- The callback fires after the changes have been applied to the Schema instance, so you're dealing with the updated instance when it executes.
 
 **TypeScript**
 
@@ -2151,7 +2151,7 @@ callbacks.onRemove(state.players, (sessionId, player) {
 
 > **Warning:**
 >
-> **Not required when using [JavaScript SDK](https://docs.colyseus.io/getting-started/typescript.md) or [Defold SDK](https://docs.colyseus.io/getting-started/defold.md)** - The following section is only required when using statically typed languages in your frontend, such as C#, Haxe, etc.
+> **Not required when using [JavaScript SDK](https://docs.colyseus.io/getting-started/typescript.md) or [Defold SDK](https://docs.colyseus.io/getting-started/defold.md).** The following section is only required when using statically typed languages in your frontend, such as C#, Haxe, etc.
 
 The `schema-codegen` is a command-line tool designed to convert your backend schema definitions into compatible frontend schemas.
 

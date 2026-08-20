@@ -2,9 +2,9 @@
 
 # Netcode
 
-Fast-paced games can't wait for the network. If your character only moves after a round-trip to the server, controls feel underwater. But if the client simply moves itself, the server is no longer in charge and cheating becomes trivial.
+Fast-paced games can't wait for the network. If your character only moves after a round-trip to the server, controls feel sluggish. But if the client simply moves itself, the server is no longer in charge and cheating becomes trivial.
 
-Colyseus 0.18 gives you both: the server stays authoritative, and the client **predicts**. Your own movement responds instantly, remote players move smoothly, and a well-aimed shot at a moving target actually lands, no hand-rolled netcode stack required.
+Colyseus 0.18 gives you both: the server stays authoritative, and the client **predicts**. Your own movement responds instantly, remote players move smoothly, and hits register against what you saw on screen. The framework runs the prediction, reconciliation, and rewind loops. You supply the deterministic step function.
 
 > **Note:**
 >
@@ -17,7 +17,7 @@ The stack is one loop split across the server and the client. Each half is confi
 - The **server** runs the authoritative simulation at a **fixed tick rate**.
 - The **client predicts** its own entity by running the same step function locally. When the server's authoritative state arrives, it **reconciles**: roll back, replay the inputs the server hasn't processed yet, and smoothly correct any mismatch.
 - **Remote** entities are smoothed from the server stream (interpolated a little in the past, or dead-reckoned forward).
-- For hits, the server **rewinds** other entities to where the shooter *saw* them (their render time), so a well-aimed shot at a moving target registers.
+- For hits, the server **rewinds** other entities to where the shooter *saw* them (their render time). That way, a well-aimed shot at a moving target registers.
 
 > One input per fixed step; one `predict.tick()` per render frame drives everything.
 
@@ -72,13 +72,13 @@ New to prediction? Read top to bottom. Each page builds on the one before it:
 
 ## Runnable reference
 
-Prefer to learn by poking at something live? The [**Prediction Playground**](https://github.com/colyseus/prediction-playground) is an interactive tour of this whole section: twelve small labs, each isolating one concept: rollback and reconciliation, the interpolation modes, dead reckoning, lag compensation, optimistic events, predicted spawns, composite worlds. Every lab has a live latency slider, visualizations of what the SDK is doing (server ghosts, pending-input chips, rewind markers), and shows the exact SDK-facing code it runs.
+The [**Prediction Playground**](https://prediction-colyseus.vercel.app/) covers this whole section as twelve small labs, each isolating one concept. Rollback and reconciliation, the interpolation modes, dead reckoning, lag compensation, optimistic events, predicted spawns, composite worlds. Every lab has a latency slider and visualizations of the SDK internals (server ghosts, pending-input chips, rewind markers). Each also shows the SDK-facing code it runs. The [source is on GitHub](https://github.com/colyseus/prediction-playground).
 
 ### Premium demos
 
-The playground isolates each concept; these {premiumDemos.length} prototypes put them all together: authoritative server, client prediction, smoothed remotes and lag compensation running as one stack. All of them are free to play in your browser.
+The playground isolates each concept. These {premiumDemos.length} prototypes combine them: authoritative server, client prediction, smoothed remotes and lag compensation running as one stack. Each is playable in the browser.
 
-The set is actively expanding, with new prototypes and with more engine ports of the existing ones: Air Hockey already ships Godot and Unity clients alongside its Three.js build.
+The set is actively expanding, with new prototypes and with more engine ports of the existing ones. Air Hockey already ships Godot and Unity clients alongside its Three.js build.
 
 > **Note:**
 >
@@ -89,7 +89,7 @@ Source: https://docs.colyseus.io/netcode
 
 # Server Input & Fixed Timestep
 
-This is the **server half** of the netcode stack: declare what input each client sends, consume it, and advance the authoritative simulation at a fixed tick rate. The matching client half lives in [Client Prediction](https://docs.colyseus.io/netcode/client-prediction.md).
+This page covers the **server half** of the netcode stack. Declare what input each client sends, consume it, and advance the authoritative simulation at a fixed tick rate. The matching client half lives in [Client Prediction](https://docs.colyseus.io/netcode/client-prediction.md).
 
 > **Note:**
 >
@@ -159,7 +159,7 @@ export type MoveInput = SchemaType<typeof MoveInput>;
 
 > **Note:**
 >
-> Calling `defineInput()` does more than buffer input: it powers the client's [`room.clock`](https://docs.colyseus.io/netcode/client-prediction.md#roomclock) (clock-sync and RTT ride the input acks), and lets `room.input()` resolve the schema without a client-side constructor. A room that never calls it leaves the client clock as a stub.
+> Calling `defineInput()` does more than buffer input: it powers the client's [`room.clock`](https://docs.colyseus.io/netcode/client-prediction.md#roomclock) (clock-sync and RTT ride the input acks). The call also lets `room.input()` resolve the schema without a client-side constructor. A room that never calls it leaves the client clock as a stub.
 
 ### Consuming input
 
@@ -168,17 +168,40 @@ The accessor `this.inputs.get(sessionId)` exposes the per-client buffered stream
 - **Iterate**: the per-entity loop. Consumes one frame at a time, so the lag-comp `renderTime` stamp tracks each individual input:
 
   ```ts
-  for (const cmd of this.inputs.get(sid)) applyInput(p, cmd, ctx.dt);
+  step(ctx) {
+    for (const [sid, p] of this.state.players) {
+      // frame by frame: the ack and renderTime advance once per input
+      for (const cmd of this.inputs.get(sid)) {
+        applyInput(p, cmd, ctx.dt);
+      }
+    }
+  }
   ```
 
 - **`next()`**: take **exactly one**. Right when a single shared solver step moves every body together: consume one input per entity, then step the world once:
 
   ```ts
-  const cmd = this.inputs.get(sid).next();
-  if (cmd) applyInput(p, cmd, ctx.dt);
+  step(ctx) {
+    for (const [sid, p] of this.state.players) {
+      const cmd = this.inputs.get(sid).next();   // oldest pending frame, or undefined
+      if (cmd) applyInput(p, cmd, ctx.dt);
+    }
+    this.world.step(ctx.dt);                     // one solver step moves every body
+  }
   ```
 
-- **`drain()`**: take **all** buffered frames as an array. The ack (`lastProcessed`) lands on the newest frame.
+- **`drain()`**: take **all** buffered frames as an array. The ack (`lastProcessed`) lands on the newest frame. Use it when you need the array itself: its length, a replay recording, or a physics call that accepts a list.
+
+  ```ts
+  step(ctx) {
+    for (const [sid, p] of this.state.players) {
+      const cmds = this.inputs.get(sid).drain();  // whole burst, oldest first
+      for (const cmd of cmds) {
+        applyInput(p, cmd, ctx.dt);
+      }
+    }
+  }
+  ```
 
 > **Warning:**
 >
@@ -216,25 +239,51 @@ inputs = this.defineInput(MoveInput, {
 
 What should happen on a tick where a client sent nothing? Pick one of three policies, declared **once** at `defineInput({ idle })` and applied automatically when you consume:
 
-- **Skip** (default): don't declare `idle`, and `drain()` returns `[]` and the loop simply doesn't run. Right for strict fixed-timestep games where the client sends one input per step.
-- **Synthesize**: declare a policy, and an empty tick yields one frame: the schema's **defaults** overlaid with your overrides. Gravity keeps integrating, and action guards like `if (f.fire)` naturally no-op on defaults. The callback runs lazily (only on actually-empty ticks) and closes over the room:
+- **Skip** (default): don't declare `idle`. An empty tick yields nothing: `drain()` returns `[]`, `next()` returns `undefined`, and you keep the `if (cmd)` guard from the [loops above](#consuming-input). Right for strict fixed-timestep games where the client sends one input per step.
+
+- **Synthesize**: declare a policy, and an empty tick yields one frame: the schema's **defaults** overlaid with your overrides. The callback runs lazily (only on actually-empty ticks) and closes over the room. On the consuming side, `next()` always yields a frame, so the loop loses its `if (cmd)` branch:
 
   ```ts
   inputs = this.defineInput(MoveInput, {
     bufferMaxSize: 64,
     idle: ({ latest, sessionId }) => {
       const p = this.state.players.get(sessionId);
-      if (!p) return true;                    // defaults frame for the empty seat
-      return { yaw: p.yaw, jump: false };                 // defaults ⊕ overrides
+      if (!p) return true;                       // defaults frame for the empty seat
+      return { yaw: p.yaw, jump: false };        // defaults ⊕ overrides
     },
   });
+  
+  step(ctx) {
+    for (const [sid, p] of this.state.players) {
+      const cmd = this.inputs.get(sid).next();   // idle declared: never undefined
+      applyInput(p, cmd, ctx.dt);                // gravity keeps integrating
+      if (cmd.jump) p.tryJump();                 // idle frame: jump=false, no-op
+    }
+    this.world.step(ctx.dt);
+  }
   ```
 
-- **Hold everything**: return the whole last input as the idle frame, so a held key keeps moving the player through a packet gap. Gate it on the client still being connected:
+- **Hold everything**: return the whole last input as the idle frame, so a held key keeps moving the player through a packet gap. Two guards keep it honest. In the policy, hold only while the client is still connected. In the loop, check `wasIdle` before edge-triggered actions, because a held frame repeats `jump: true` for every tick of the gap:
 
   ```ts
-  idle: ({ latest, sessionId }) =>
-    (this.clients.get(sessionId)?.state === ClientState.JOINED && latest) || true,
+  inputs = this.defineInput(MoveInput, {
+    bufferMaxSize: 64,
+    idle: ({ latest, sessionId }) => {
+      const client = this.clients.get(sessionId);
+      if (client?.state !== ClientState.JOINED) return true;  // dropped: defaults
+      return latest ?? true;                     // hold the last input through the gap
+    },
+  });
+  
+  step(ctx) {
+    for (const [sid, p] of this.state.players) {
+      const inp = this.inputs.get(sid);
+      const cmd = inp.next();                    // gap: the held key stays down
+      applyInput(p, cmd, ctx.dt);
+      if (cmd.jump && !inp.wasIdle) p.tryJump(); // held jump must not re-fire
+    }
+    this.world.step(ctx.dt);
+  }
   ```
 
 The policy also covers **absent sessions**. A player who dropped but is still inside their `allowReconnection` window lingers in `state`. The input accessor resolves through a registry that outlives the connection, so your loop keeps synthesizing idle frames for the empty seat. No `if (!cmd) continue` needed.
@@ -243,7 +292,7 @@ The policy also covers **absent sessions**. A player who dropped but is still in
 >
 > Three things to know about synthesized idle frames. They are **not consumed inputs**: they advance neither the reconcile ack (`lastProcessed`) nor `renderTime`. They are **one reused instance** per client: read within the tick, don't store. And never build overrides by **spreading** a schema instance (`{ ...latest, yaw }`): schema fields are prototype accessors, so the spread copies none of them. Return `latest` itself, or name the fields you want.
 
-Per-call `{ idle }` overrides the room policy for that call; `{ idle: false }` suppresses it. When `idle` is declared, `next()` returns a non-optional value.
+Per-call `{ idle }` overrides the room policy for that call; `{ idle: false }` suppresses it.
 
 ## `setFixedTimestep(step, tickRate, options?)`
 
@@ -270,18 +319,20 @@ The `ctx` (a `StepContext`) carries the timing your simulation needs:
 
 ### Sub-stepping: high-rate physics on a low network rate
 
-By default the input/network rate **is** the physics rate (see [the contract](https://docs.colyseus.io/netcode/determinism.md#the-contract)): asking for "30 inputs/sec" forces 30 Hz simulation, which can be too coarse for stable physics. **Sub-stepping** is the escape hatch. Declare it once on the server:
+By default the input/network rate **is** the physics rate (see [the contract](https://docs.colyseus.io/netcode/determinism.md#the-contract)). Asking for "30 inputs/sec" forces 30 Hz simulation, which can be too coarse for stable physics. **Sub-stepping** is the escape hatch. Declare it once on the server:
 
 ```ts
 this.setFixedTimestep((ctx) => {
   this.applyInputs(ctx);                                    // ONE input per client per step
-  for (let i = 0; i < ctx.subSteps; i++) this.world.step(ctx.subDt);
+  for (let i = 0; i < ctx.subSteps; i++) {
+    this.world.step(ctx.subDt);
+  }
 }, 30, { subSteps: 2 });                                    // 30 inputs/sec, 60 Hz physics
 ```
 
 One input still drives exactly one fixed step, so the replay invariant is untouched; *inside* that step, the engine integrates `subSteps` sub-steps of `subDt`. The handshake cascades `subSteps` alongside `tickRate`, so the client reconciler's `ctx` carries the **same** values. Your shared `step` function runs the identical loop on both sides.
 
-Two rules keep it correct: apply the input **once per step**, not once per sub-step (an impulse-like input applied per sub-step would double-fire), and never hand-derive the sub-step count or dt on either side: read `ctx.subSteps` / `ctx.subDt`.
+Two rules keep it correct. Apply the input **once per step**, not once per sub-step (an impulse-like input applied per sub-step would double-fire). Never hand-derive the sub-step count or dt on either side: read `ctx.subSteps` / `ctx.subDt`.
 
 ## `setTimestep` (variable step)
 
@@ -304,7 +355,7 @@ Source: https://docs.colyseus.io/netcode/server-input
 
 # Client Prediction & Reconciliation
 
-This is the **client half** of the netcode stack: send input, predict your own entity, reconcile to the server's authoritative state, and smooth the entities you don't control. The matching server half lives in [Server Input & Timestep](https://docs.colyseus.io/netcode/server-input.md).
+This page is the **client half** of the netcode stack. Send input, predict your own entity, reconcile to the server's authoritative state, and smooth the entities you don't control. The matching server half lives in [Server Input & Timestep](https://docs.colyseus.io/netcode/server-input.md).
 
 > **Note:**
 >
@@ -559,9 +610,9 @@ final input = room.input();
 ```
 
 - **`type`**: the input schema constructor. Optional when the server called `defineInput()`: the schema then arrives via the join handshake and is used automatically. An explicit constructor always wins.
-- **`mode`**: `"reliable"` (default) or `"unreliable"`. Over plain WebSocket, stay reliable. On a datagram-capable transport, `{ mode: "unreliable", historySize: 4 }` is the recommended rollback setup: each packet carries the last N inputs as redundancy, so a drop costs nothing and nothing head-of-line blocks. That transport is [WebTransport](https://docs.colyseus.io/server/transport/webtransport.md) alone: experimental, and supported by the JavaScript/TypeScript SDK only. Other SDKs reject `"unreliable"` at construction for now.
+- **`mode`**: `"reliable"` (default) or `"unreliable"`. Over plain WebSocket, stay reliable. On a datagram-capable transport, `{ mode: "unreliable", historySize: 4 }` is the recommended rollback setup. Each packet carries the last N inputs as redundancy, so a drop costs nothing and nothing head-of-line blocks. That transport is [WebTransport](https://docs.colyseus.io/server/transport/webtransport.md) alone: experimental, and supported by the JavaScript/TypeScript SDK only. Other SDKs reject `"unreliable"` at construction for now.
 - **`historySize`**: unreliable-mode redundancy depth (default 3). Ignored in reliable mode.
-- **`renderDelay`**: your remote interp buffer in ms, used for the lag-comp stamp. **Usually omit it**: wiring the handle through `predict.reconciler`/`predict.sim` binds it to the Predict's lerp `delay` automatically, so the buffer you render at and the server's rewind instant come from one number.
+- **`renderDelay`**: your remote interp buffer in ms, used for the lag-comp stamp. **Usually omit it**: wiring the handle through `predict.reconciler`/`predict.sim` binds it to the Predict's lerp `delay` automatically. The buffer you render at and the server's rewind instant then come from one number.
 - **`allowRewind`**: a predicate selecting which inputs carry the lag-comp timestamp. It's a bandwidth trim: stamp only the inputs the server actually rewinds for, e.g. `(d) => d.fire`. Reliable mode only: an unreliable packet stamps its whole redundancy ring or none of it, so the predicate is ignored there. See [Lag Compensation](https://docs.colyseus.io/netcode/lag-compensation.md).
 
 The GDScript handle accepts no options object: `render_delay` is a property, and `input.set_rewind_field("fire")` replaces `allowRewind`.
@@ -638,11 +689,11 @@ const predict = Predict.get(room, { mode: "lerp", delay: 100 });
 
 > **Note:**
 >
-> The construction options object is JavaScript-only. Ports take only the room and declare `mode`/`delay` per attach: `Predict.Get(room)` in C#, `Predict.get(room)` in Lua, Haxe and Dart, `Colyseus.Predict.of(room)` in GDScript.
+> The construction options object is JavaScript-only. Ports take only the room and declare `mode`/`delay` per attach. Use `Predict.Get(room)` in C#, `Predict.get(room)` in Lua, Haxe and Dart, and `Colyseus.Predict.of(room)` in GDScript.
 
-Call `predict.tick(now)` **once per render frame**, passing the rAF timestamp. It returns the number of fixed input steps due this frame, and drives everything it owns: reconcile on new acks, correction decay, remote smoothing, event settlement.
+Call `predict.tick(now)` **once per render frame**, passing the rAF timestamp. It returns the number of fixed input steps due this frame. It also drives everything it owns: reconcile on new acks, correction decay, remote smoothing, event settlement.
 
-`now` is optional in every SDK. Omit it and the room clock is read for you, which is what the examples above do: it saves picking a platform clock that may not share the SDK's epoch. Pass it in JavaScript anyway: the rAF timestamp is the exact frame time, on the same axis as the default.
+`now` is optional in every SDK. Omit it and the room clock is read for you, which is what the examples above do. That saves picking a platform clock that may not share the SDK's epoch. Pass it in JavaScript anyway: the rAF timestamp is the exact frame time, on the same axis as the default.
 
 ### Remote entities
 
@@ -723,8 +774,9 @@ Read the smoothed value with `predict.value(entity, field)`. Smoothing modes:
 | `reckon` | Dead-reckon forward via a step fn | Server-driven AI / ballistics |
 | `raw` | Unsmoothed (the live synced value) | Debugging |
 
-Two per-attach options are worth knowing:
+Three per-attach options are worth knowing:
 
+- **`smoothMs`**: an output-smoothing time constant in milliseconds. On `damped` and `extrapolate` it is the chase rate (default 50). On `lerp` it arms a display-only output spring (default 0, exact interpolation): see [Rough snapshot streams](https://docs.colyseus.io/netcode/recipes.md#rough-snapshot-streams-smoothms).
 - **`snap`**: a value-space threshold past which a jump is treated as a teleport: smoothing resets and the entity pops instead of gliding. Use it for respawns, blinks, warps.
 - **`angle`**: treat the field as radians, interpolating over the shortest arc. Attach angular fields in a separate call from linear ones.
 
@@ -798,7 +850,7 @@ final me = predict.reconciler(self,
 ```
 
 - `step(ctx, state, cmd)`: the deterministic step function, **shared with the server**. `cmd` is the buffered wire input recorded at `send()` (the exact value the server decodes), so lossy wire fields (a quantized angle) reconcile by construction. Keep everything the step reads on the input schema.
-- `fields`: optional, and usually best omitted. Every scalar field of the instance's schema is then mirrored, which is the right default. Pass an explicit subset only to exclude scalars deliberately (with the dev panel active, the SDK warns once if the step touches a field the list excludes). Numeric fields get smooth error correction; non-numeric fields (e.g. `grounded`) are copied verbatim on reconcile.
+- `fields`: optional, and usually best omitted. Every scalar field of the instance's schema is then mirrored, which is the right default. Pass an explicit subset only to exclude scalars deliberately. With the dev panel active, the SDK warns once if the step touches a field the list excludes. Numeric fields get smooth error correction; non-numeric fields (e.g. `grounded`) are copied verbatim on reconcile.
 - `smoothMs`: how long a reconcile correction takes to fade, as a time constant in milliseconds (a correction fades ~63% per `smoothMs`, ~95% by 3×). Defaults to one server patch interval; `0` applies corrections instantly.
 - `snap`: teleport threshold in world units, the active-controller mirror of the [per-attach `snap`](https://docs.colyseus.io/netcode/recipes.md#teleports--respawns-snap). A reconcile correction past it **pops** to the corrected pose instead of gliding across the map, and doesn't count toward divergence telemetry.
 - `warnOnDivergence`: drift tolerance in world units. The SDK warns in the console when the **persistent** reconcile-correction EMA crosses it: a determinism break, not jitter. The telemetry behind it (`me.drift.ema` / `me.drift.peak`) runs while watched (this option set, or the dev panel active). See [Diagnosing divergence vs jitter](https://docs.colyseus.io/netcode/determinism.md#diagnosing-divergence-vs-jitter). Not exposed in the GDScript and Flutter bindings: read the drift telemetry directly (`me.drift_ema` in GDScript, `me.drift.ema` in Dart).
@@ -815,7 +867,7 @@ Lifecycle is automatic: on reconnect the SDK resets the input handle and observi
 
 When your inputs affect **more** than one flat-field entity (a paddle *and* the puck it strikes, or an opaque physics engine), use `predict.sim`. You own a `world` (any object) and the SDK runs the same predict → adopt-on-ack → replay loop over it.
 
-**Composite scalars** need no callbacks: put the decoded schema instances themselves in `world` and they are **auto-bound**, replaced in place by plain scalar mirrors that the SDK seeds, re-adopts from server truth on every ack, and smooths:
+**Composite scalars** need no callbacks: put the decoded schema instances themselves in `world` and they are **auto-bound**. The SDK replaces them in place with plain scalar mirrors that it seeds, re-adopts from server truth on every ack, and smooths:
 
 **TypeScript**
 
@@ -924,7 +976,7 @@ const me = predict.sim({
 
 > **Note:**
 >
-> The opaque-engine face (`adopt` + `pose`) is JavaScript-only. The ports run `sim` over auto-bound schema mirrors instead; the Flutter binding additionally accepts `adopt` for opaque extras, with poses still derived from bound parts.
+> The opaque-engine face (`adopt` + `pose`) is JavaScript-only. The ports run `sim` over auto-bound schema mirrors instead. The Flutter binding additionally accepts `adopt` for opaque extras, with poses still derived from bound parts.
 
 - `adopt(world)`: seed the server's authoritative scalars into the opaque entries on each ack, before replay. Runs after any bound entries' auto-adopt, so it may derive from just-adopted mirrors.
 - `pose(world)`: read the opaque entries into a flat render pose; smoothing operates on these numbers in addition to the bound parts' auto-derived `"part.field"` fields.
@@ -1036,7 +1088,7 @@ if (crossedGoalLine) ctx.predict(goals, 'goal:${ctx.tick}');
 room.onMessage('score').listen((_) => goals.confirm());
 ```
 
-Settlement is automatic where it can be. A sim-born prediction auto-rejects once the server has processed `graceTicks` (default 10) past its birth step without a `confirm()`: the server ran the very timeline that predicted the event, and stayed silent. UI-born predictions (`goals.predict(payload)` called outside the sim) can't count ticks, so they fall back to a wall-clock TTL (`ttlMs`, default `max(2×rtt, 600ms)`).
+Settlement is automatic where it can be. A sim-born prediction auto-rejects once the server has processed `graceTicks` (default 10) past its birth step without a `confirm()`. The server ran the very timeline that predicted the event, and stayed silent. UI-born predictions (`goals.predict(payload)` called outside the sim) can't count ticks, so they fall back to a wall-clock TTL (`ttlMs`, default `max(2×rtt, 600ms)`).
 
 Three more options:
 
@@ -1073,7 +1125,7 @@ confirmOn: { collection: "bananas", event: "remove" }              // the remova
 confirmOn: { collection: "bananas", event: "add", mine: "owner" }  // OUR arrival settles the pending drop
 ```
 
-A predicted **spawn** can't know the key the server will assign, so `add` settles keyless: the channel holds a single anonymous pending entry, and `mine` (a field name compared against your `sessionId`) keeps a remote player's spawn from confirming yours. All three forms are plain data: no listener plumbing, nothing to unsubscribe. Signals that don't fit (a broadcast, entry keys that aren't collection keys) stay one manual `confirm()` line, as above.
+A predicted **spawn** can't know the key the server will assign, so `add` settles keyless. The channel holds a single anonymous pending entry. The `mine` property (a field name compared against your `sessionId`) keeps a remote player's spawn from confirming yours. All three forms are plain data: no listener plumbing, nothing to unsubscribe. Signals that don't fit (a broadcast, entry keys that aren't collection keys) stay one manual `confirm()` line, as above.
 
 ### The other player's event: `onUnpredicted`
 
@@ -1145,7 +1197,7 @@ Call `memo` on every step and let `compute` decide the value: return `undefined`
 
 ## `room.clock`
 
-Your window into server time and connection latency: what time it is on the server right now, and how long your packets take to get there. It's always safe to call: `room.clock` is never `undefined` and no method needs optional chaining or a fallback. Rooms that use input (`defineInput()`) get a real clock-sync estimator during the join handshake; other rooms keep a stub that reads from your local clock. Three timelines, split by what you compare against:
+Your window into server time and connection latency: what time it is on the server, and how long your packets take to get there. It's always safe to call: `room.clock` is never `undefined` and no method needs optional chaining or a fallback. Rooms that use input (`defineInput()`) get a real clock-sync estimator during the join handshake; other rooms keep a stub that reads from your local clock. Three timelines, split by what you compare against:
 
 - **`clock.now()`**: local monotonic ms. For **self-imposed relative gates**: a cooldown or fire-rate *you* started (`now() - lastFired >= COOLDOWN_MS`). Needs no clock sync, immune to offset jitter.
 - **`clock.serverNow()`**: estimated server clock (ms since room start). For **server-stamped absolute deadlines**: invuln windows, respawn timers, hit stamps (anything the server wrote a timestamp for).
@@ -1181,7 +1233,7 @@ The Godot and Flutter bindings do not expose `at(seq)`, `onSend`, `reckonTimeAt`
 
 > **Note:**
 >
-> **Dev tooling:** `import "@colyseus/sdk/debug"` (a side-effect import, JavaScript SDK only) enables the in-page dev panel: per-reconciler drift telemetry, profiles, and connection internals. It's a no-op in production builds that skip the import.
+> **Dev tooling:** `import "@colyseus/sdk/debug"` (a side-effect import, JavaScript SDK only) enables the in-page dev panel. The panel shows per-reconciler drift telemetry, profiles, and connection internals. It's a no-op in production builds that skip the import.
 
 ## Next
 

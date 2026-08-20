@@ -215,12 +215,12 @@ For what a patch costs in bytes and how to make it smaller, see [Optimizing Stat
 
 ## How does it work, internally?
 
-- **Handshake**: When a client joins a room, the server sends all the types that compose the room's state to the client, followed by the full state.
+- **Handshake**: When a client joins a room, the server sends all the types that compose the room's state, followed by the full state.
     - Handshake is skipped on automatic reconnections, OR when the client has provided the concrete state classes when joining the room.
 - **Enqueueing changes**: When the server mutates the state, it tracks which properties have changed since the last state synchronization, per `Schema` instance. Each `Schema` instance holds a `ChangeTree` object that tracks its changes.
 - **Sending changes**: The server encodes only the changed properties and sends them to the client during the [patchRate](https://docs.colyseus.io/room.md#configuration-properties) interval.
-- **`refId`**: Each `Schema` instance has a unique `refId` that is used to identify the instance across the network. This is how Colyseus knows which instance has been added, removed, or updated.
-- **Decoding changes**: When the client receives the state changes, it decodes them and applies them to each `Schema` instance, based on the `refId`, triggering the `onChange`, `listen`, and `onAdd`/`onRemove` callbacks on the frontend.
+- **`refId`**: Each `Schema` instance has a unique `refId` that is used to identify the instance across the network. The `refId` is how Colyseus knows which instance has been added, removed, or updated.
+- **Decoding changes**: When the client receives the state changes, it decodes them and applies them to each `Schema` instance based on the `refId`. Decoding triggers the `onChange`, `listen`, and `onAdd`/`onRemove` callbacks on the frontend.
 
 ---
 
@@ -484,7 +484,7 @@ The field is still written to the full state sync, so a late joiner gets the cur
 
 #### `.patchOnly()`
 
-The field travels on **tick patches only**. It is never written to a full state sync, so a client that joins mid-game does not receive it at all. The field appears only when it next changes:
+The field travels on **tick patches only**. A full state sync never includes it, so a client that joins mid-game does not receive it at all. The field appears only when it next changes:
 
 **Schema Builder**
 
@@ -546,7 +546,7 @@ class MyState extends Schema {
 }
 ```
 
-Room-wide data like this tends to be **large and constant**, exactly the combination you don't want anywhere near a per-tick patch. The modifier is a guarantee rather than an optimization you have to keep verifying: the field cannot end up in a patch, however the surrounding code evolves.
+Room-wide data like this tends to be **large and constant**, exactly the combination you don't want anywhere near a per-tick patch. The modifier is a guarantee rather than an optimization you have to keep verifying. The field cannot end up in a patch, however the surrounding code evolves.
 
 That makes it the exact mirror of `.patchOnly()`:
 
@@ -560,7 +560,7 @@ That makes it the exact mirror of `.patchOnly()`:
 >
 > Writes after a client has joined are **silently dropped**: no error, and that client keeps the value it joined with. Populate these fields during `onCreate()`, before anyone is connected. If clients need to see a field change while they're connected, it can't be `.fullStateOnly()`.
 
-The field itself is not frozen. It stays an ordinary, mutable property on the server. Only its propagation to clients stops. On a [streamed](https://docs.colyseus.io/state/streaming.md) field the same rule applies per *element*: a client receives each element as it was when sent, and no later update to it.
+The field itself is not frozen. It stays an ordinary, mutable property on the server. Only its propagation to clients stops. On a [streamed](https://docs.colyseus.io/state/streaming.md) field the same rule applies per *element*. A client receives each element as it was when sent, and no later update to it.
 
 ## Data Types
 
@@ -637,7 +637,7 @@ Specialized number types:
 
 #### Quantized floats (`t.quantized()` / `t.angle()`)
 
-A float that changes every tick within a **known range** (a look angle, a normalized scalar, a unit-vector component) doesn't need all 4 bytes of a `float32`. `t.quantized()` maps the range onto an 8-, 16- or 32-bit unsigned integer on the wire, at a precision you choose:
+A float that changes every tick within a **known range** doesn't need a full 4-byte `float32`. Think of a look angle, a normalized scalar, or a unit-vector component. `t.quantized()` maps the range onto an 8-, 16- or 32-bit unsigned integer on the wire, at a precision you choose:
 
 ```ts
 const Input = schema({
@@ -675,7 +675,7 @@ Your code reads and writes a plain `number`. The conversion is invisible.
 
 > **Note:**
 >
-> **Quantization is lossy, but identically lossy on both peers.** The field only ever yields the dequantized value, so a client's prediction and the server's simulation read the *same* number and a predicted hitscan ray matches the server's. The loss is against the original float, never between the two peers.
+> **Quantization is lossy, but identically lossy on both peers.** The field only ever yields the dequantized value, so a client's prediction and the server's simulation read the *same* number. A predicted hitscan ray matches the server's. The loss is against the original float, never between the two peers.
 >
 > For a cyclic field that you also *interpolate* on the client, `"wrap"` fixes the wire seam, not the rendering. Lerp it shortest-arc as well, or it unwinds the long way around.
 
@@ -1360,7 +1360,7 @@ const MyState = schema({
 
 Accessing a `.deprecated()` field throws an error; use `.deprecated(false)` to keep reads allowed while the field is retired. (Decorator style: `@deprecated() @type(...)`. See [Deprecating fields](https://docs.colyseus.io/state/schema/decorators.md#deprecating-fields).)
 
-This is particularly useful for native-compiled targets, such as C#, C++, Haxe, etc - where the frontend can potentially not have the most up-to-date version of the schema definitions.
+This modifier is particularly useful for native-compiled targets (C#, C++, Haxe), where the frontend may not have the latest schema definitions.
 
 ---
 
@@ -1624,10 +1624,6 @@ Source: https://docs.colyseus.io/state/schema/decorators
 State synchronization is already delta-encoded. Only the properties that changed since the last patch are sent, and a property re-assigned to the same value is not sent at all. Most rooms never need to think past that.
 
 This page is for the rooms that do: many entities, a high tick rate, or a bandwidth bill. It documents what a patch actually costs, so you can reason about your own state instead of guessing.
-
-> **Note:**
->
-> The wire format did not change in `@colyseus/schema` 5.0. The encoder became roughly 2.4× faster and allocates about half the heap, but the bytes are identical to 4.x. What 5.0 added is *control*: [delivery modifiers](https://docs.colyseus.io/state/schema.md#delivery-modifiers), [quantized floats](https://docs.colyseus.io/state/schema.md#quantized-floats-tquantized--tangle), and [streaming collections](https://docs.colyseus.io/state/streaming.md).
 
 ## What a patch costs
 

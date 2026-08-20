@@ -549,7 +549,7 @@ onCreate() {
 
 ## Client Instance
 
-The `client` instance from the backend is responsible for the **transport** layer between the server and the client. It should not be confused with the [`Client` from the frontend SDK](https://docs.colyseus.io/sdk.md), as they have completely different purposes.
+The `client` instance from the backend is responsible for the **transport** layer between the server and the client. Do not confuse it with the [`Client` from the frontend SDK](https://docs.colyseus.io/sdk.md), as they have completely different purposes.
 
 You operate on `client` instances from [`this.clients`](#clients), [`Room#onJoin()`](https://docs.colyseus.io/room/lifecycle.md#on-join), [`Room#onLeave()`](https://docs.colyseus.io/room/lifecycle.md#on-leave) and [`Room#onMessage()`](#on-messages).
 
@@ -673,7 +673,7 @@ Send a raw byte array message to the client.
 
 The `type` can be either a `string` or a `number`.
 
-This is useful if you'd like to manually encode a message, rather than the default encoding (MsgPack).
+This method is useful if you'd like to manually encode a message, rather than the default encoding (MsgPack).
 
 ```ts filename="MyRoom.ts"
 //
@@ -703,7 +703,7 @@ client.leave(4020);
 
 > **Note:**
 >
-> This will trigger [`room.onLeave`](https://docs.colyseus.io/sdk/connection.md#leaving-a-room) event on the frontend.
+> This call will trigger the [`room.onLeave`](https://docs.colyseus.io/sdk/connection.md#leaving-a-room) event on the frontend.
 
 #### Table of WebSocket close codes
 
@@ -939,7 +939,7 @@ async onJoin (client, options, auth?) {
 >
 > New in 0.17. See [Automatic Reconnection](https://docs.colyseus.io/room/reconnection.md) for more details.
 
-Triggered when a client disconnects unexpectedly (without consent). This is the recommended place to use `allowReconnection()`.
+Triggered when a client disconnects unexpectedly (without consent). This hook is the recommended place to use `allowReconnection()`.
 
 **Parameters:**
 
@@ -1156,7 +1156,7 @@ Source: https://docs.colyseus.io/room/lifecycle
 
 # Message Composability
 
-The `Messages<R>` type allows you to define reusable, type-safe message handlers that can be composed and spread into your Room's `messages` property. This is useful for:
+The `Messages<R>` type allows you to define reusable, type-safe message handlers that can be composed and spread into your Room's `messages` property. This pattern is useful for:
 
 - **Code reuse**: Share common message handlers across multiple rooms
 - **Modularity**: Organize handlers into separate files or modules
@@ -1197,7 +1197,7 @@ export const thirdPartyMessages: Messages<MyRoom> = {
 
 > **Warning:**
 >
-> When using `validate()` with the `Messages<R>` type, use a regular `function` expression instead of an arrow function if you need to access `this` (the Room instance).
+> When using `validate()` with the `Messages<R>` type, an arrow function won't give you access to `this` (the Room instance). Use a regular `function` expression instead.
 
 ## Composing Messages in Your Room
 
@@ -1282,7 +1282,7 @@ from your `Room` instance.
 
 ## Clock
 
-The clock is provided as a useful mechanism to time events outside of a stateful simulation. An example use case could be: when a player collects an item you might `clock.setTimeout(...)` to create a new collectible. One advantage to using `this.clock` is that you do not have to be concerned with room updates and deltas and can instead focus on timing your events independently of the room state.
+The clock is provided as a useful mechanism to time events outside of a stateful simulation. An example use case could be: when a player collects an item you might `clock.setTimeout(...)` to create a new collectible. One advantage of `this.clock` is that you do not have to track room updates and deltas. You can instead time your events independently of the room state.
 
 ### Clock Methods
 
@@ -1303,7 +1303,7 @@ instance which identifies the interval, so you can manipulate it later.
 
 **Example**
 
-The example below shows a Room with: `setInterval()`, `setTimeout` and clearing a previously stored instance of type `Delayed`; along with showing the currentTime from the Room's clock instance.
+The example below shows a Room with `setInterval()`, `setTimeout`, and clearing a previously stored instance of type `Delayed`. The example also reads `currentTime` from the Room's clock instance.
 
 After 1 second 'Time now ' + `this.clock.currentTime` is `console.log`'d, and then after 10 seconds we clear the interval via `this.delayedInterval.clear()`
 
