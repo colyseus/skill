@@ -401,9 +401,9 @@ function frame(now) {                      // pass the rAF timestamp through
 ```cs
 using Colyseus.Predict;
 
-var predict = Predict.Get(room);
+var predict = Predict.Get(room, new PredictGetOptions { Mode = PredictMode.Lerp, Delay = 100 });
 
-// Remote players: interpolated between snapshots, 100ms in the past (the default delay).
+// Remote players: render 100ms in the past, interpolated between snapshots.
 predict.AttachAll("players", new AttachConfig {
     ["x"] = PredictMode.Lerp, ["y"] = PredictMode.Lerp,
 });
@@ -412,8 +412,7 @@ predict.AttachAll("players", new AttachConfig {
 var cmd = new MoveInput();
 var input = room.Input(cmd);
 var me = predict.Reconciler(self, new ReconcilerOptions<Player, MoveInput> {
-    Input = input,
-    Fields = new[] { "x", "y", "vx", "vy" },       // the fields the step touches
+    Input = input,                                 // every scalar field of `self` mirrors by default
     SmoothMs = 65,
     Step = (ctx, s, c) => ApplyInput(s, c, LEVEL, ctx.Dt),  // SAME function the server runs
 });
@@ -467,10 +466,10 @@ end
 ```haxe
 import io.colyseus.predict.Predict;
 
-var predict = Predict.get(room);
+var predict = Predict.get(room, { mode: "lerp", delay: 100 });
 
-// Remote players: interpolated between snapshots, 100ms in the past (the default delay).
-predict.attachAll("players", { x: "lerp", y: "lerp" });
+// Remote players: render 100ms in the past, interpolated between snapshots.
+predict.attachAll("players", { mode: "lerp", fields: ["x", "y"] });
 
 // Local player: the input handle is the ONLY thing that stages + sends.
 var input = room.input({ type: MoveInput });
@@ -683,13 +682,49 @@ The handle also surfaces the server-advertised rates from the handshake: `input.
 
 The entry point for all client-side smoothing and prediction. Create one per room and share the instance. Each `Predict.get` call constructs a fresh, independent `Predict`:
 
+**TypeScript**
+
 ```ts
 const predict = Predict.get(room, { mode: "lerp", delay: 100 });
 ```
 
+**C#**
+
+```cs
+var predict = Predict.Get(room, new PredictGetOptions { Mode = PredictMode.Lerp, Delay = 100 });
+```
+
+**Lua**
+
+```lua
+local predict = Predict.get(room, { mode = "lerp", delay = 100 })
+```
+
+**Haxe**
+
+```haxe
+var predict = Predict.get(room, { mode: "lerp", delay: 100 });
+```
+
+**GDScript**
+
+```gdscript
+# takes only the room: declare mode/delay per attach
+var predict = Colyseus.Predict.of(room)
+```
+
+**Dart**
+
+```dart
+// takes only the room: declare mode/delay per attach
+final predict = Predict.get(room);
+```
+
+The options seed the room-wide defaults every attach inherits when it omits an option (`mode`, `delay`, `smoothMs`, `snap`, and a reckon `step`/`substep`). `predict.setDefaults(opts)` changes them later, and `predict.mode` reads the current default mode (`SetDefaults` / `Mode` in C#). A change only reaches attaches made *after* the call, since each attach snapshots what it resolved.
+
 > **Note:**
 >
-> The construction options object is JavaScript-only. Ports take only the room and declare `mode`/`delay` per attach. Use `Predict.Get(room)` in C#, `Predict.get(room)` in Lua, Haxe and Dart, and `Colyseus.Predict.of(room)` in GDScript.
+> The construction options object is available in JavaScript, C#, Haxe and Lua. The GDScript and Dart bindings take only the room and declare `mode`/`delay` per attach.
 
 Call `predict.tick(now)` **once per render frame**, passing the rAF timestamp. It returns the number of fixed input steps due this frame. It also drives everything it owns: reconcile on new acks, correction decay, remote smoothing, event settlement.
 
@@ -721,6 +756,10 @@ predict.AttachAll("players", new AttachConfig {
 **Lua**
 
 ```lua
+-- one config spread over a list of fields:
+predict:attach_all("players", { mode = "lerp", fields = { "x", "y" } })
+
+-- or a per-field map, each field picking its own mode:
 predict:attach_all("players", { x = "lerp", y = "lerp" })
 
 -- per-field options instead of a bare mode:
@@ -730,6 +769,10 @@ predict:attach_all("players", { x = { mode = "lerp", delay = 100 } })
 **Haxe**
 
 ```haxe
+// one config spread over a list of fields:
+predict.attachAll("players", { mode: "lerp", fields: ["x", "y"] });
+
+// or a per-field map, each field picking its own mode:
 predict.attachAll("players", { x: "lerp", y: "lerp" });
 
 // per-field options instead of a bare mode:
@@ -762,7 +805,7 @@ predict.attachAll('players',
     config: {'x': FieldOptions(mode: PredictMode.lerp, delay: 100)});
 ```
 
-In C#, Lua, and Haxe the collection attaches wholesale. The reconciler's overlay wins for your own entity. The GDScript and Dart bindings take an except-key to leave it out explicitly.
+In C#, Lua, and Haxe the collection attaches in full, your own entity included. The reconciler's overlay wins for your own entity. The GDScript and Dart bindings take an except-key to leave it out explicitly.
 
 Read the smoothed value with `predict.value(entity, field)`. Smoothing modes:
 
@@ -799,7 +842,6 @@ const me = predict.reconciler(self, {
 ```cs
 var me = predict.Reconciler(self, new ReconcilerOptions<Player, MoveInput> {
     Input = input,
-    Fields = new[] { "x", "y", "vx", "vy" },
     SmoothMs = 65,
     Step = (ctx, state, cmd) => ApplyInput(state, cmd, LEVEL, ctx.Dt),
 });
@@ -976,7 +1018,7 @@ const me = predict.sim({
 
 > **Note:**
 >
-> The opaque-engine face (`adopt` + `pose`) is JavaScript-only. The ports run `sim` over auto-bound schema mirrors instead. The Flutter binding additionally accepts `adopt` for opaque extras, with poses still derived from bound parts.
+> The opaque-engine face (`adopt` + `pose`) is JavaScript-only. The ports run `sim` over auto-bound schema mirrors instead. The C# (`Adopt`) and Flutter bindings additionally accept `adopt` for opaque extras, with poses still derived from bound parts.
 
 - `adopt(world)`: seed the server's authoritative scalars into the opaque entries on each ack, before replay. Runs after any bound entries' auto-adopt, so it may derive from just-adopted mirrors.
 - `pose(world)`: read the opaque entries into a flat render pose; smoothing operates on these numbers in addition to the bound parts' auto-derived `"part.field"` fields.
@@ -989,9 +1031,9 @@ const me = predict.sim({
 
 Three reads, split by purpose:
 
-- **Rendering**: `predict.value(instance, field)`, the smoothed render read. One idiom for everything: passively-smoothed remotes, your reconciled entity, sim-bound instances. Falls back to the raw synced value before spawn / after dispose. The batch form `predict.read(instance, fields, out?)` (JavaScript-only) reads every listed field into one object, the client mirror of the server's [`seen.read`](https://docs.colyseus.io/netcode/lag-compensation.md#rewindview). On per-frame paths, pass a reused scratch and hoist the `fields` array; extra scratch properties are left untouched.
+- **Rendering**: `predict.value(instance, field)`, the smoothed render read. One idiom for everything: passively-smoothed remotes, your reconciled entity, sim-bound instances. Falls back to the raw synced value before spawn / after dispose. The batch form `predict.read(instance, fields, out?)` (JavaScript and C#, as `predict.Read(instance, fields, output)` into a `double[]`) reads every listed field into one object, the client mirror of the server's [`seen.read`](https://docs.colyseus.io/netcode/lag-compensation.md#rewindview). On per-frame paths, pass a reused scratch and hoist the `fields` array; extra scratch properties are left untouched.
 - **Game logic**: `me.state` (reconciler) / `me.world` (sim), the exact predicted state with no smoothing offset. A hit test against the smoothed render value would lag the truth by the correction offset.
-- **A moment in time**: `predict.valueAt(instance, field, time)`, a remote entity reckoned at an arbitrary server-time instant. Sample remotes at `ctx.reckonTime` inside your step and your client-side hit verdict matches the server's lag-comp rewind by construction. See [Lag Compensation](https://docs.colyseus.io/netcode/lag-compensation.md). The batch form `predict.readAt(instance, fields, time, out?)` (JavaScript-only) runs one forward reckon integration per entity instead of one per field.
+- **A moment in time**: `predict.valueAt(instance, field, time)`, a remote entity reckoned at an arbitrary server-time instant. Sample remotes at `ctx.reckonTime` inside your step and your client-side hit verdict matches the server's lag-comp rewind by construction. See [Lag Compensation](https://docs.colyseus.io/netcode/lag-compensation.md). The batch form `predict.readAt(instance, fields, time, out?)` (JavaScript and C#, as `predict.ReadAt(instance, fields, time, output)`) runs one forward reckon integration per entity instead of one per field.
 
 ## Optimistic events: `defineEvent`
 
@@ -1090,8 +1132,9 @@ room.onMessage('score').listen((_) => goals.confirm());
 
 Settlement is automatic where it can be. A sim-born prediction auto-rejects once the server has processed `graceTicks` (default 10) past its birth step without a `confirm()`. The server ran the very timeline that predicted the event, and stayed silent. UI-born predictions (`goals.predict(payload)` called outside the sim) can't count ticks, so they fall back to a wall-clock TTL (`ttlMs`, default `max(2×rtt, 600ms)`).
 
-Three more options:
+Four more options:
 
+- **`label`**: a diagnostic name. Nothing resolves by it; it names the channel in warnings, which starts to matter once a room has several.
 - **`uniqueBy`**: gives entries identity: dedupe while pending, and address one among several on confirm/reject. Available in C#, Lua, and Haxe; the GDScript and Flutter channels use explicit string keys instead.
 - **`cooldownMs`**: rate-limits feedback channel-wide.
 - **`onConfirm`**: available but usually empty; the optimistic feedback already played.
@@ -1102,9 +1145,11 @@ Flag-shaped consumers can skip callbacks entirely and derive from `goals.has(key
 
 > **Note:**
 >
-> `confirmOn` is JavaScript-only. In the other SDKs, wire the settlement manually: listen for the state change with your schema callbacks and call `channel.confirm(key)`. The grace-tick auto-reject behaves identically.
+> `confirmOn` is available in JavaScript and C#. In the other SDKs, wire the settlement manually: listen for the state change with your schema callbacks and call `channel.confirm(key)`. The grace-tick auto-reject behaves identically.
 
 A broadcast is one settlement signal; more often the signal is **state itself**: a crate's `alive` flipping, a banana joining or leaving its collection. Declare that shape and the channel wires the schema listeners for you (and tears them down with the channel):
+
+**TypeScript**
 
 ```ts
 const breaks = predict.defineEvent<string>({
@@ -1118,11 +1163,54 @@ if (smashed) ctx.predict(breaks, crateId);
 const broken = !crate.alive || breaks.has(crateId);
 ```
 
+**C#**
+
+```cs
+var breaks = predict.DefineEvent(new PredictedEventChannelOptions<string> {
+    ConfirmOn = new ConfirmOn { Collection = "crates", Field = "alive", Equals = false },
+});
+
+// inside the step:
+if (smashed) ctx.Predict(breaks, crateId);
+
+// render (flag-shaped): derive, no callbacks needed
+bool broken = !crate.alive || breaks.Has(crateId);
+```
+
+**Lua**
+
+```lua
+-- not available: call channel:confirm(key) from a schema callback watching `alive`
+```
+
+**Haxe**
+
+```haxe
+// not available: call channel.confirm(key) from a schema callback watching `alive`
+```
+
+**GDScript**
+
+```gdscript
+# not available: call channel.confirm(key) from a schema callback watching `alive`
+```
+
+**Dart**
+
+```dart
+// not available: call channel.confirm(key) from a schema callback watching `alive`
+```
+
 When a child's `field` becomes `equals`, the entry keyed by that child's **collection key** confirms, so key your entries by collection key. Two membership variants complete the set:
 
 ```ts
 confirmOn: { collection: "bananas", event: "remove" }              // the removal confirms its key
 confirmOn: { collection: "bananas", event: "add", mine: "owner" }  // OUR arrival settles the pending drop
+```
+
+```cs
+ConfirmOn = new ConfirmOn { Collection = "bananas", Event = "remove" }                 // the removal confirms its key
+ConfirmOn = new ConfirmOn { Collection = "bananas", Event = "add", Mine = "owner" }   // OUR arrival settles the pending drop
 ```
 
 A predicted **spawn** can't know the key the server will assign, so `add` settles keyless. The channel holds a single anonymous pending entry. The `mine` property (a field name compared against your `sessionId`) keeps a remote player's spawn from confirming yours. All three forms are plain data: no listener plumbing, nothing to unsubscribe. Signals that don't fit (a broadcast, entry keys that aren't collection keys) stay one manual `confirm()` line, as above.
@@ -1141,7 +1229,7 @@ const boxPickups = predict.defineEvent<string>({
 
 > **Note:**
 >
-> `onUnpredicted` exists in the C#, Lua, Haxe, and Flutter ports (not GDScript). The `confirmOn` wiring shown here is JavaScript-only: ports call `confirm()` from their own state callbacks.
+> `onUnpredicted` exists in the C#, Lua, Haxe, and Flutter ports (not GDScript). The `confirmOn` wiring shown here is available in JavaScript and C#: the other ports call `confirm()` from their own state callbacks.
 
 Branch on the callbacks: `onConfirm` means *we* predicted it, `onUnpredicted` means we didn't. Never branch on a `has()` read racing a confirm: the entry is removed *before* `onConfirm` fires.
 

@@ -1,5 +1,5 @@
 {
-  "$comment": "Bundled references, assembled from docs.colyseus.io by scripts/sync.mjs. Keep this list to the pages an agent gets wrong from memory; everything else is linked from SKILL.md instead of bundled.",
+  "$comment": "Bundled references, assembled from docs.colyseus.io by tools/sync.mjs. Keep this list to the pages an agent gets wrong from memory; everything else is linked from SKILL.md instead of bundled.",
   "references": {
     "schema.md": [
       "/state",
@@ -11,11 +11,11 @@
       "/room",
       "/room/lifecycle",
       "/room/messages",
-      "/room/timing-events"
+      "/room/timing-events",
+      "/room/reconnection"
     ],
     "client-sdk.md": [
       "/sdk",
-      "/sdk/messages",
       "/sdk/connection",
       "/state/callbacks"
     ],
