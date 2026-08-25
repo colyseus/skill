@@ -9,7 +9,8 @@
  * It also resolves every documentation URL mentioned in SKILL.md. A 404 there
  * means a page was renamed: the site's redirect map is client-side JavaScript
  * and does not rescue a raw fetch, so a stale URL is dead for the agent that
- * follows it. Better to fail here.
+ * follows it. Better to fail here. The `references/<file> § "Heading"` section
+ * pointers in SKILL.md are checked the same way against the generated files.
  *
  *   node tools/sync.mjs            # rewrite references/
  *   node tools/sync.mjs --check    # fail if references/ is out of date
@@ -87,10 +88,27 @@ for (const route of linked) {
     }
 }
 
+// Every `references/<file> § "Heading"` pointer must name a real section, or
+// the agent that jumps to it lands nowhere. Headings come from the docs, so a
+// renamed heading upstream fails here, like a renamed page does above.
+const headingText = (line) => line.replace(/^#+\s*/, '').replace(/`/g, '').trim()
+const pointers = new Map()
+for (const [, file, heading] of skill.matchAll(/references\/([\w.-]+\.md) § "([^"]+)"/g)) pointers.set(`${file} § ${heading}`, { file, heading })
+
+for (const { file, heading } of pointers.values()) {
+    const target = path.join(referencesDir, file)
+    if (!fs.existsSync(target)) {
+        failures.push(`SKILL.md points at a reference that does not exist: ${file}`)
+        continue
+    }
+    const headings = fs.readFileSync(target, 'utf8').split('\n').filter((l) => /^#{1,6} /.test(l)).map(headingText)
+    if (!headings.includes(heading)) failures.push(`SKILL.md points at a section that does not exist: ${file} § "${heading}"`)
+}
+
 for (const f of failures) console.error(`  ${f}`)
 
 if (failures.length) {
-    console.error(`\n✗ ${failures.length} unresolved source(s): a page was renamed or removed`)
+    console.error(`\n✗ ${failures.length} unresolved: a page or section was renamed or removed`)
     process.exit(1)
 }
 if (stale.length) {
@@ -99,4 +117,4 @@ if (stale.length) {
 }
 
 const count = Object.keys(sources.references).length
-console.log(`✓ ${check ? 'up to date' : 'synced'}: ${count} references, ${linked.length} linked pages resolve`)
+console.log(`✓ ${check ? 'up to date' : 'synced'}: ${count} references, ${linked.length} linked pages and ${pointers.size} section pointers resolve`)
