@@ -45,8 +45,10 @@ in `tools/` is for maintaining this repository and is not part of the skill.
 
 ## What is in it
 
-- `SKILL.md`: version detection, the anti-pattern table, the canonical 0.18
-  shapes, and a routing table. Hand-written.
+- `SKILL.md`: version detection, the anti-pattern table, old-shape → new-shape
+  diffs for the APIs that changed structure (server definition, state
+  callbacks, reconnection), the canonical 0.18 shapes, a symptom table for
+  existing projects, and a routing table. Hand-written.
 - `references/`: full documentation text for the areas agents get wrong:
   schema, room, client SDK, netcode. **Generated. Do not edit.**
 
@@ -64,7 +66,9 @@ npm run check     # fail if references/ is out of date
 `npm run check` also resolves every documentation URL named in `SKILL.md`. A
 404 means a page was renamed: the site's redirect map is client-side
 JavaScript, so it cannot rescue a raw fetch, and a stale URL is dead for the
-agent that follows it.
+agent that follows it. The same goes for the `references/<file> § "Heading"`
+pointers `SKILL.md` uses to send an agent to one section of a reference
+instead of the whole file: each must match a heading in the generated text.
 
 To test against an unpublished docs build, point `DOCS_ORIGIN` at its output
 directory:
