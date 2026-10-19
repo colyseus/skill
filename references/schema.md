@@ -662,7 +662,7 @@ Your code reads and writes a plain `number`. The conversion is invisible.
 
 **Picking `mode`** is the only real decision, and the wire size is identical either way:
 
-- **`"clamp"`**: the value has **hard walls**. A pitch limit, a health bar, a 0–1 throttle. Both endpoints are exact and distinct; out-of-range input clamps to the nearest end. Looking past the pitch limit stops *at* the limit.
+- **`"clamp"`**: the value has **hard walls**. A pitch limit, a health bar, a 0–1 throttle. Both endpoints are exact and distinct; out-of-range input clamps to the nearest end. Looking past the pitch limit stops *at* the limit. A range symmetric about zero also carries an exact zero, which matters for input axes and velocities (see below).
 - **`"wrap"`**: the value is **cyclic**: `min` and `max` are the same point. An angle, a compass bearing, a hue, a phase. Any input is reduced modulo the range first, so a large accumulated or negative angle folds back in. A yaw keeps spinning instead of jamming.
 
 > Ask: does one step past the top land you back at the bottom, as the same physical thing? → `"wrap"`. Is the top a wall you can't cross? → `"clamp"`.
@@ -672,6 +672,10 @@ Your code reads and writes a plain `number`. The conversion is invisible.
 > **Warning:**
 >
 > **Choosing the wrong mode is a real bug.** A clamped heading jams at the `0`/`2π` seam. A wrapped pitch flips the camera the instant you look a hair too far up.
+
+> **Note:**
+>
+> **A range symmetric about zero carries an exact zero.** When `min` is exactly `-max`, as in `t.quantized({ min: -1, max: 1 })` for an input axis or `{ min: -150, max: 150 }` for a velocity, the range is laid out so that `min`, `0` and `max` all land exactly on a step. A released axis reads back as `0`, so a `=== 0` test fires, and a velocity you set to zero comes to rest instead of creeping. Evening out the grid costs one of the `2^bits` codes, so the step is a hair coarser and nothing else changes.
 
 > **Note:**
 >
@@ -910,9 +914,13 @@ this.state.array1.forEach(element => {
 **C#**
 
 ``` cs
-State.array1.ForEach((value) => {
+// ArraySchema<T> is an IReadOnlyList<T>: foreach, the indexer and LINQ all work
+foreach (var value in State.array1) {
     Debug.Log(value);
-})
+}
+
+// the callback form: type the parameters, since two overloads match
+State.array1.ForEach((int index, string value) => Debug.Log(value));
 ```
 
 **Lua**
@@ -1049,10 +1057,18 @@ this.state.players.forEach((value, key) => {
 **C#**
 
 ``` cs
-State.players.ForEach((key, value) => {
+// MapSchema<T> is an IReadOnlyDictionary<string, T>: foreach walks insertion order
+foreach (var (key, player) in State.players) {
     Debug.Log(key);
-    Debug.Log(value);
-})
+    Debug.Log(player);
+}
+
+// typed live views, and LINQ through IReadOnlyDictionary
+foreach (var player in State.players.Values) { Draw(player); }
+var alive = State.players.Values.Where(p => p.hp > 0);
+
+// the callback form: type the parameters, since two overloads match
+State.players.ForEach((string key, Player player) => Debug.Log(key));
 ```
 
 **Lua**
@@ -1071,6 +1087,8 @@ for (key => value in state.players) {
     trace(index + " => " + value);
 }
 ```
+
+In C#, `foreach` over a `MapSchema<T>` allocates nothing. Adding or removing an entry during enumeration throws an `InvalidOperationException`.
 
 > **Note:**
 >
