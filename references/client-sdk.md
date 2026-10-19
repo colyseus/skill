@@ -62,6 +62,16 @@ import 'package:colyseus/colyseus.dart';
 final client = ColyseusClient('ws://localhost:2567');
 ```
 
+**GML**
+
+```js filename="client.gml"
+// Create event
+client = colyseus_client_create("http://localhost:2567");
+
+// Step event
+colyseus_process(); // once per Step: delivers every queued event and callback
+```
+
 ---
 
 ## Joining Rooms
@@ -148,6 +158,21 @@ try {
 }
 ```
 
+**GML**
+
+```js filename="client.gml"
+// "room" is a GameMaker built-in, so use another name
+net_room = colyseus_client_join_or_create(client, "battle", {/* options */});
+
+colyseus_on_join(net_room, function(_room) {
+    show_debug_message("joined successfully");
+});
+
+colyseus_on_error(net_room, function(_code, _message) {
+    show_debug_message("join error: " + _message);
+});
+```
+
 > **Note:**
 >
 > Locked or private rooms are ignored by this method.
@@ -161,7 +186,7 @@ These methods use the same pattern as `joinOrCreate`. Replace the method name ac
 | `create` | `client.create(roomName, options)` | Always creates a new room, even if others exist. |
 | `join` | `client.join(roomName, options)` | Joins an existing room. Fails if none available. Locked/private rooms are ignored. |
 | `joinById` | `client.joinById(roomId, options)` | Joins a specific room by its unique ID. **Private rooms can be joined by ID.** Useful for invite links. |
-| `consumeSeatReservation` | `client.consumeSeatReservation(reservation)` | Joins using a pre-reserved seat from the server. See [Matchmaker → Reserve Seat For](https://docs.colyseus.io/matchmaker.md#reserve-a-seat-for). |
+| `consumeSeatReservation` | `client.consumeSeatReservation(reservation)` | Joins with a seat your backend reserved. See [Consuming a Seat Reservation](#consuming-a-seat-reservation). |
 
 > **Note:**
 >
@@ -177,6 +202,116 @@ const inviteLink = `https://mygame.com/join?roomId=${room.roomId}`;
 const params = new URLSearchParams(window.location.search);
 const room = await client.joinById(params.get("roomId"));
 ```
+
+### Consuming a Seat Reservation
+
+Your backend can do the matchmaking itself and hand the client a seat. The server reserves it with a [matchmaker method](https://docs.colyseus.io/matchmaker.md#methods) such as `matchMaker.joinOrCreate()` or `matchMaker.reserveSeatFor()`. The client then joins with `consumeSeatReservation`, which makes no matchmaking request of its own.
+
+```ts filename="app.config.ts"
+import { defineServer, createEndpoint, createRouter, matchMaker } from "colyseus";
+
+const findMatch = createEndpoint("/find_match", { method: "POST" }, async (ctx) => {
+    // apply your own rules here (party, rank, region), then reserve the seat
+    return await matchMaker.joinOrCreate("battle", { mode: "duo" });
+});
+
+const server = defineServer({
+    routes: createRouter({ findMatch }),
+});
+```
+
+The client posts to that route and consumes the reservation it returns:
+
+**TypeScript**
+
+```ts filename="client.ts"
+const { data: reservation } = await client.http.post("/find_match");
+const room = await client.consumeSeatReservation(reservation);
+```
+
+**C#**
+
+```cs filename="Client.cs"
+var reservation = await client.Http.Post<SeatReservation>("find_match");
+var room = await client.ConsumeSeatReservation<YourStateClass>(reservation);
+```
+
+**Lua**
+
+```lua filename="client.lua"
+client.http:post("/find_match", function(err, reservation)
+  if (err ~= nil) then return end
+
+  client:consume_seat_reservation(reservation, function(err, room)
+    if (err ~= nil) then
+      print("join error: " .. err)
+      return
+    end
+    print("joined " .. room.room_id)
+  end)
+end)
+```
+
+**Haxe**
+
+```haxe filename="client.hx"
+client.http.post("find_match", null, function(err, reservation) {
+  if (err != null) return;
+
+  client.consumeSeatReservation(reservation, YourStateClass, function(err, room) {
+    if (err != null) {
+      trace("join error: " + err);
+      return;
+    }
+    trace("joined " + room.roomId);
+  });
+});
+```
+
+**GDScript**
+
+```gdscript filename="client.gd"
+client.http.post("/find_match", {}, func(err, reservation):
+    if err:
+        return
+    # a Dictionary, or the same object as a JSON String
+    var room: Colyseus.Room = client.consume_seat_reservation(reservation)
+    room.joined.connect(func(): print("joined ", room.get_id()))
+    room.error.connect(func(code, message): printerr("join error: ", message)))
+```
+
+**Dart**
+
+```dart filename="client.dart"
+final response = await client.http.post('/find_match');
+final room = await client.consumeSeatReservation(
+    SeatReservation.fromJson(response.json),
+    stateType: MyRoomState.new);
+```
+
+**GML**
+
+```js filename="client.gml"
+colyseus_http_post(client, "/find_match", {}, function(_err, _reservation) {
+    if (_err != undefined) return;
+
+    net_room = colyseus_client_consume_seat_reservation(client, _reservation);
+    colyseus_on_join(net_room, function(_room) {
+        show_debug_message("joined " + colyseus_room_get_id(_room));
+    });
+    colyseus_on_error(net_room, function(_code, _message) {
+        show_debug_message("join error: " + _message);
+    });
+});
+```
+
+A [queue](https://docs.colyseus.io/matchmaker/queue.md#receiving-a-seat-reservation) or lobby room can send the reservation as a message instead. Pass the message payload the same way. GDScript and GML take it as it arrives (a `Dictionary` and a struct), and Dart reads it with `SeatReservation.fromJson()`.
+
+The [Swift](https://docs.colyseus.io/getting-started/swift.md#quick-example) and [C](https://docs.colyseus.io/getting-started/native-sdk.md#seat-reservations) SDKs expose the same call. Minimum native SDK versions: Godot 0.18.4, Flutter 0.18.5, GameMaker 0.18.5, Swift and C 0.18.9.
+
+> **Note:**
+>
+> A reservation expires if the client doesn't join within the room's `seatReservationTimeout` (15 seconds by default). When the server sets a [`publicAddress`](https://docs.colyseus.io/server.md#public-address-publicaddress), the reservation carries it, and the client connects to that address directly.
 
 ---
 
@@ -268,6 +403,16 @@ room.send('move', {'direction': 'left'});
 room.sendInt(0, {'direction': 'left'});
 ```
 
+**GML**
+
+```js filename="client.gml"
+// sending message with string type
+colyseus_send(net_room, "move", { direction: "left" });
+
+// sending message with number type
+colyseus_send(net_room, 0, { direction: "left" });
+```
+
 > **Note:**
 >
 > **Backend:** See [Room → Message Handling](https://docs.colyseus.io/room.md#message-handling) for detailed documentation on receiving messages from the client.
@@ -352,6 +497,18 @@ func _on_message_received(type: Variant, message: Variant):
 room.onMessage('powerup').listen((message) {
   print('message received from server');
   print(message);
+});
+```
+
+**GML**
+
+```js filename="client.gml"
+// one handler per room receives every message type
+colyseus_on_message(net_room, function(_room, _type, _message) {
+    if (_type != "powerup") return;
+
+    show_debug_message("message received from server");
+    show_debug_message(_message);
 });
 ```
 
@@ -568,6 +725,32 @@ callbacks.onRemove(state.players, (sessionId, player) {
 });
 ```
 
+**GML**
+
+```js filename="client.gml"
+// the callbacks manager needs the joined room's state
+colyseus_on_join(net_room, function(_room) {
+    callbacks = colyseus_callbacks_create(_room);
+
+    colyseus_listen(callbacks, "currentTurn", function(_value, _previous) {
+        show_debug_message("Turn changed: " + string(_previous) + " -> " + string(_value));
+    });
+
+    colyseus_on_add(callbacks, "players", function(_player, _session_id) {
+        show_debug_message("Player joined: " + _session_id);
+
+        // nested callbacks can't see outer locals: bind them with method()
+        colyseus_listen(callbacks, _player, "hp", method({ session_id: _session_id }, function(_hp, _previous) {
+            show_debug_message("Player " + session_id + " hp: " + string(_hp));
+        }));
+    });
+
+    colyseus_on_remove(callbacks, "players", function(_player, _session_id) {
+        show_debug_message("Player left: " + _session_id);
+    });
+});
+```
+
 > **Note:**
 >
 > See the full [State Sync Callbacks](https://docs.colyseus.io/state/callbacks.md) documentation for all available methods including `listen`, `onAdd`, `onRemove`, and more.
@@ -672,6 +855,17 @@ client.getLatency({ pingCount: 5 }, function(err, avgLatency) {
 // Measure round-trip time on a live connection with room.ping() instead.
 ```
 
+**GML**
+
+```js filename="client.gml"
+colyseus_get_latency(client, "ws://localhost:2567", function(_err, _latency) {
+    if (_err != undefined) return;
+    show_debug_message("Latency: " + string(_latency) + " ms");
+});
+
+// No pingCount option: each call sends one ping.
+```
+
 #### During a Room Connection
 
 Measure round-trip time on an existing connection.
@@ -720,6 +914,13 @@ room.ping(function(latency) {
 ```dart filename="client.dart"
 final latency = await room.ping();
 print('Latency: $latency ms');
+```
+
+**GML**
+
+```js filename="client.gml"
+// Not available in the GameMaker SDK.
+// Measure latency with colyseus_get_latency() instead.
 ```
 
 > **Note:**
@@ -825,6 +1026,28 @@ var client = Colyseus.Client.new(endpoints[0])  # Set your preferred endpoint
 // Multi-region selection is not available in the Flutter SDK.
 // Pick an endpoint yourself and create the client for it:
 final client = ColyseusClient('wss://us-east.gameserver.com');
+```
+
+**GML**
+
+```js filename="client.gml"
+// Select the best server from multiple regions
+colyseus_select_by_latency(client, [
+    "wss://us-east.gameserver.com",
+    "wss://eu-west.gameserver.com",
+    "wss://asia.gameserver.com"
+], function(_err, _best) {
+    if (_err != undefined) return;
+
+    // Now use a client for the lowest-latency endpoint
+    colyseus_client_free(client);
+    client = colyseus_client_create(_best.endpoint);
+
+    net_room = colyseus_client_join_or_create(client, "game", {});
+    colyseus_on_join(net_room, function(_room) {
+        show_debug_message("joined successfully");
+    });
+});
 ```
 
 > **Note:**
@@ -1972,6 +2195,8 @@ callbacks.onAdd(state.entities, (sessionId, entity) {
 Register the `onAdd` callback is called whenever a new instance is added to a collection.
 
 By default, the callback is called immediately for existing items in the collection.
+
+Registering before the server has sent the collection is fine. A collection the client still holds as `null`, or as the empty instance a generated C# class starts with, counts as not yet received. The callback waits and fires when the first sync, or a later patch, delivers it, replaying the items that arrived with it. A collection a [`StateView`](https://docs.colyseus.io/state/view.md) adds later arrives the same way.
 
 **TypeScript**
 

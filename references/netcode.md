@@ -404,9 +404,7 @@ using Colyseus.Predict;
 var predict = Predict.Get(room, new PredictGetOptions { Mode = PredictMode.Lerp, Delay = 100 });
 
 // Remote players: render 100ms in the past, interpolated between snapshots.
-predict.AttachAll("players", new AttachConfig {
-    ["x"] = PredictMode.Lerp, ["y"] = PredictMode.Lerp,
-});
+predict.AttachAll("players", new AttachOptions { Mode = PredictMode.Lerp, Fields = new[] { "x", "y" } });
 
 // Local player: the input handle is the ONLY thing that stages + sends.
 var cmd = new MoveInput();
@@ -611,7 +609,7 @@ final input = room.input();
 - **`type`**: the input schema constructor. Optional when the server called `defineInput()`: the schema then arrives via the join handshake and is used automatically. An explicit constructor always wins.
 - **`mode`**: `"reliable"` (default) or `"unreliable"`. Over plain WebSocket, stay reliable. On a datagram-capable transport, `{ mode: "unreliable", historySize: 4 }` is the recommended rollback setup. Each packet carries the last N inputs as redundancy, so a drop costs nothing and nothing head-of-line blocks. That transport is [WebTransport](https://docs.colyseus.io/server/transport/webtransport.md) alone: experimental, and supported by the JavaScript/TypeScript SDK only. Other SDKs reject `"unreliable"` at construction for now.
 - **`historySize`**: unreliable-mode redundancy depth (default 3). Ignored in reliable mode.
-- **`renderDelay`**: your remote interp buffer in ms, used for the lag-comp stamp. **Usually omit it**: wiring the handle through `predict.reconciler`/`predict.sim` binds it to the Predict's lerp `delay` automatically. The buffer you render at and the server's rewind instant then come from one number.
+- **`renderDelay`**: your remote interp buffer in ms, used for the lag-comp stamp. **Usually omit it**: wiring the handle through `predict.reconciler`/`predict.sim` binds it to the Predict's lerp `delay` automatically. The buffer you render at and the server's rewind instant then come from one number. The binding reads the Predict's *default* `delay` (from `Predict.get` or `setDefaults`) live, not a per-attach `delay`. Any explicit value, `0` included, wins over the binding. In C# the option is a `double?`: leave `InputOptions.RenderDelay` null to bind, and note that assigning `input.RenderDelay` later also counts as explicit.
 - **`allowRewind`**: a predicate selecting which inputs carry the lag-comp timestamp. It's a bandwidth trim: stamp only the inputs the server actually rewinds for, e.g. `(d) => d.fire`. Reliable mode only: an unreliable packet stamps its whole redundancy ring or none of it, so the predicate is ignored there. See [Lag Compensation](https://docs.colyseus.io/netcode/lag-compensation.md).
 
 The GDScript handle accepts no options object: `render_delay` is a property, and `input.set_rewind_field("fire")` replaces `allowRewind`.
@@ -722,6 +720,8 @@ final predict = Predict.get(room);
 
 The options seed the room-wide defaults every attach inherits when it omits an option (`mode`, `delay`, `smoothMs`, `snap`, and a reckon `step`/`substep`). `predict.setDefaults(opts)` changes them later, and `predict.mode` reads the current default mode (`SetDefaults` / `Mode` in C#). A change only reaches attaches made *after* the call, since each attach snapshots what it resolved.
 
+`name` labels the instance in logs and the debug panel, and `predict.name` reads it back (`PredictGetOptions.Name` / `predict.Name` in C#). It defaults to `predict#N`, numbered per process. Only `Predict.get` sets it: `setDefaults` ignores it.
+
 > **Note:**
 >
 > The construction options object is available in JavaScript, C#, Haxe and Lua. The GDScript and Dart bindings take only the room and declare `mode`/`delay` per attach.
@@ -743,6 +743,10 @@ predict.attachAll("players", { mode: "lerp", fields: ["x", "y"] });
 **C#**
 
 ```cs
+// one options set spread over a list of fields:
+predict.AttachAll("players", new AttachOptions { Mode = PredictMode.Lerp, Fields = new[] { "x", "y" } });
+
+// or a per-field map, each field picking its own mode:
 predict.AttachAll("players", new AttachConfig {
     ["x"] = PredictMode.Lerp, ["y"] = PredictMode.Lerp,
 });
@@ -806,6 +810,8 @@ predict.attachAll('players',
 ```
 
 In C#, Lua, and Haxe the collection attaches in full, your own entity included. The reconciler's overlay wins for your own entity. The GDScript and Dart bindings take an except-key to leave it out explicitly.
+
+In C#, `AttachOptions` extends `PredictFieldOptions` with `Fields`, a reckon `Step` and a `Substep`, so one object carries the field list and the options. `Attach(instance, options)` takes the same object for a single instance. An omitted `Mode` follows the Predict's default, and `Reckon` needs a `Step` from the options or from the Predict. Fields the instance's type doesn't declare are skipped, and a call that matches no field warns once.
 
 Read the smoothed value with `predict.value(entity, field)`. Smoothing modes:
 
@@ -1282,6 +1288,17 @@ if (verdict.isNotEmpty && verdict[0] != 0) state.vx = verdict[1];
 ```
 
 Call `memo` on every step and let `compute` decide the value: return `undefined` for "nothing" (stored sparsely). Need more than one memo per step? Disambiguate with a key: `ctx.memo("collide", …)`. The key-less form is **one shared slot per step**. Two calls landing on that slot (two key-less calls, or a repeated key) silently corrupt replay with one frozen value for both. With the dev panel active, the SDK warns on the collision. Prefer reconciled `fields` when the value **is** derivable by re-running the step: that replays *and* self-corrects for free. The key-less shared slot exists in TypeScript, C#, Lua, and Haxe; the Godot and Flutter bindings always take a key and freeze numbers (`memo_vec`/`memoVec` for small tuples).
+
+C# has no `undefined`, so `ctx.Memo<T>` returns `default` when the live step stored nothing under the key. For a value type, that reads the same as a memoized zero. Calling `Memo` on every step avoids the case: return a nullable type such as `int?`, with `null` for "nothing". When a memo has to sit behind a branch, use `ctx.TryMemo`. A correction can send a replay down that branch on a step the live run skipped, and `TryMemo` then returns `false` instead of a zero that looks real. A stored `null` counts as a value, and `compute` never runs on a replay in either form.
+
+```cs
+if (state.x >= LootZoneX) {
+    // a correction can bring a replay here on a step the live run never reached
+    if (ctx.TryMemo("loot", () => rng.Next(0, 6), out int lootIndex)) {
+        state.lootIndex = lootIndex;   // Memo<int> would return 0 here, a real item
+    }
+}
+```
 
 ## `room.clock`
 
